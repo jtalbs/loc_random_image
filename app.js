@@ -1,32 +1,12 @@
 (function () {
   "use strict";
 
-  const API_BASE = "https://www.loc.gov/pictures/search/";
+  // The /photos/ endpoint is the modern loc.gov API with CORS support.
+  // It indexes ~1.2 million items from Prints & Photographs.
+  const API_BASE = "https://www.loc.gov/photos/";
   const ITEMS_PER_PAGE = 5;
-  const MAX_RETRIES = 5;
-
-  // Broad search terms to sample different parts of the catalog.
-  // Each entry has a query and the approximate number of result pages (at 5 per page).
-  const SEARCH_POOLS = [
-    { q: "photograph", pages: 80000 },
-    { q: "portrait", pages: 30000 },
-    { q: "building", pages: 20000 },
-    { q: "war", pages: 15000 },
-    { q: "city", pages: 12000 },
-    { q: "poster", pages: 25000 },
-    { q: "drawing", pages: 15000 },
-    { q: "map", pages: 8000 },
-    { q: "landscape", pages: 10000 },
-    { q: "woman", pages: 8000 },
-    { q: "children", pages: 5000 },
-    { q: "house", pages: 8000 },
-    { q: "farm", pages: 5000 },
-    { q: "ship", pages: 4000 },
-    { q: "bridge", pages: 3000 },
-    { q: "baseball", pages: 3000 },
-    { q: "aviation", pages: 2000 },
-    { q: "music", pages: 3000 },
-  ];
+  const MAX_PAGE = 200000; // ~1.2M items / 5 per page, conservative cap
+  const MAX_RETRIES = 6;
 
   const btn = document.getElementById("fetch-btn");
   const loading = document.getElementById("loading");
@@ -48,60 +28,73 @@
     return Math.floor(Math.random() * max) + 1;
   }
 
-  function pickRandom(arr) {
-    return arr[Math.floor(Math.random() * arr.length)];
-  }
-
   /**
-   * Derive a larger image URL from the API-provided URL.
-   * The "full" field often returns a 150px thumbnail; replacing the
-   * suffix with "r.jpg" yields a larger version on tile.loc.gov.
+   * Pick the best image URL from the image_url array.
+   * The array typically contains:
+   *   [0] = 150px thumbnail
+   *   [1] = medium "r.jpg" or "t.gif"
+   *   [2] = larger version or verso
+   * We prefer the first URL ending in "r.jpg" (recto/medium),
+   * falling back to the thumbnail.
    */
-  function getLargeImageUrl(item) {
-    const full = item.image && item.image.full;
-    if (!full) return null;
+  function getBestImageUrl(imageUrls) {
+    if (!imageUrls || imageUrls.length === 0) return null;
 
-    // Skip placeholder / group-record images
-    if (full.includes("grouprecord") || full.includes("static/images")) {
-      return null;
-    }
+    // Prefer the medium-res recto image
+    const recto = imageUrls.find(function (u) { return /r\.(jpg|jpeg|png|gif)$/i.test(u); });
+    if (recto) return recto;
 
-    return full.replace(/_150px\.jpg$/, "r.jpg");
+    // Fall back to thumbnail if it's on tile.loc.gov (real image, not placeholder)
+    const thumb = imageUrls[0];
+    if (thumb && thumb.includes("tile.loc.gov")) return thumb;
+
+    return null;
   }
 
   async function fetchRandomItem() {
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
-      const pool = pickRandom(SEARCH_POOLS);
-      const page = randomInt(pool.pages);
-      const url = `${API_BASE}?q=${encodeURIComponent(pool.q)}&fo=json&sp=${page}&c=${ITEMS_PER_PAGE}`;
+      const page = randomInt(MAX_PAGE);
+      const url = API_BASE + "?fo=json&c=" + ITEMS_PER_PAGE + "&sp=" + page;
 
-      let resp;
+      var resp;
       try {
         resp = await fetch(url);
-      } catch {
+      } catch (e) {
         continue;
       }
       if (!resp.ok) continue;
 
-      let data;
+      var data;
       try {
         data = await resp.json();
-      } catch {
+      } catch (e) {
         continue;
       }
 
-      const results = data.results;
+      var results = data.results;
       if (!results || results.length === 0) continue;
 
       // Shuffle and pick first result with a usable image
-      const shuffled = results.sort(() => Math.random() - 0.5);
-      for (const item of shuffled) {
-        const imageUrl = getLargeImageUrl(item);
-        if (imageUrl) return { item, imageUrl };
+      var shuffled = results.slice().sort(function () { return Math.random() - 0.5; });
+      for (var i = 0; i < shuffled.length; i++) {
+        var item = shuffled[i];
+        var imageUrl = getBestImageUrl(item.image_url);
+        if (imageUrl) return { item: item, imageUrl: imageUrl };
       }
     }
 
     throw new Error("Could not find an image after several attempts. Please try again.");
+  }
+
+  function formatContributors(contributors) {
+    if (!contributors || contributors.length === 0) return "Unknown";
+    return contributors.join(", ");
+  }
+
+  function formatSubjects(item) {
+    var subs = item.subject || item.subjects || [];
+    if (subs.length === 0) return "N/A";
+    return subs.join(", ");
   }
 
   async function handleClick() {
@@ -111,21 +104,20 @@
     show(loading);
 
     try {
-      const { item, imageUrl } = await fetchRandomItem();
+      var ref = await fetchRandomItem();
+      var item = ref.item;
+      var imageUrl = ref.imageUrl;
 
       imgEl.src = imageUrl;
       imgEl.alt = item.title || "Library of Congress image";
       titleEl.textContent = item.title || "Untitled";
-      creatorEl.textContent = item.creator || "Unknown";
-      dateEl.textContent = item.created_published_date || "Unknown";
-      mediumEl.textContent = item.medium_brief || item.medium || "N/A";
-      subjectsEl.textContent =
-        (item.subjects && item.subjects.length > 0)
-          ? item.subjects.join(", ")
-          : "N/A";
+      creatorEl.textContent = formatContributors(item.contributors);
+      dateEl.textContent = item.date || "Unknown";
+      mediumEl.textContent = item.medium ? item.medium.join(", ") : (item.description || "N/A");
+      subjectsEl.textContent = formatSubjects(item);
 
-      if (item.links && item.links.item) {
-        locLink.href = item.links.item;
+      if (item.url) {
+        locLink.href = item.url;
         locLink.style.display = "";
       } else {
         locLink.style.display = "none";
