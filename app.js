@@ -3,10 +3,20 @@
 
   // The /photos/ endpoint is the modern loc.gov API with CORS support.
   // It indexes ~1.2 million items from Prints & Photographs.
+  // The API returns 400 for offsets beyond ~100k items, so we use varied
+  // search queries to reach different slices of the catalog.
   const API_BASE = "https://www.loc.gov/photos/";
-  const ITEMS_PER_PAGE = 5;
-  const MAX_PAGE = 200000; // ~1.2M items / 5 per page, conservative cap
+  const ITEMS_PER_PAGE = 20;
+  const MAX_PAGE = 5000; // Safe cap — API 400s above ~100k item offset
   const MAX_RETRIES = 6;
+
+  // Broad queries to sample different parts of the catalog
+  const QUERIES = [
+    "", "portrait", "building", "war", "city", "poster", "drawing",
+    "landscape", "woman", "children", "house", "farm", "ship", "bridge",
+    "baseball", "aviation", "music", "railroad", "theater", "church",
+    "president", "newspaper", "factory", "garden", "mountain",
+  ];
 
   const btn = document.getElementById("fetch-btn");
   const loading = document.getElementById("loading");
@@ -51,10 +61,16 @@
     return null;
   }
 
+  function pickRandom(arr) {
+    return arr[Math.floor(Math.random() * arr.length)];
+  }
+
   async function fetchRandomItem() {
     for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+      const q = pickRandom(QUERIES);
       const page = randomInt(MAX_PAGE);
-      const url = API_BASE + "?fo=json&c=" + ITEMS_PER_PAGE + "&sp=" + page;
+      const url = API_BASE + "?fo=json&c=" + ITEMS_PER_PAGE + "&sp=" + page +
+        (q ? "&q=" + encodeURIComponent(q) : "");
 
       var resp;
       try {
