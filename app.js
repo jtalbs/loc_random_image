@@ -53,24 +53,29 @@
   function getBestImageUrl(imageUrls) {
     if (!imageUrls || imageUrls.length === 0) return null;
 
-    // Filter to only tile.loc.gov URLs (skip placeholders)
-    var real = imageUrls.filter(function (u) { return u.includes("tile.loc.gov"); });
+    // Strip hash fragments (e.g. "#h=537&w=1024") so regex matching works,
+    // but keep the original URL for returning.
+    var real = [];
+    for (var i = 0; i < imageUrls.length; i++) {
+      var u = imageUrls[i];
+      if (u.includes("tile.loc.gov")) {
+        real.push({ url: u, bare: u.split("#")[0] });
+      }
+    }
     if (real.length === 0) return null;
 
-    // 1. Prefer the large "v.jpg" version
-    var large = real.find(function (u) { return /v\.(jpg|jpeg|png)$/i.test(u); });
-    if (large) return large;
+    // 1. Prefer the large "v.jpg" version (1024px)
+    var large = real.find(function (e) { return /v\.(jpg|jpeg|png)$/i.test(e.bare); });
+    if (large) return large.url;
 
-    // 2. Try medium "r.jpg"
-    var medium = real.find(function (u) { return /r\.(jpg|jpeg|png)$/i.test(u); });
+    // 2. Try medium "r.jpg" (640px) and derive a large URL from it
+    var medium = real.find(function (e) { return /r\.(jpg|jpeg|png)$/i.test(e.bare); });
     if (medium) {
-      // Derive large from medium: replace trailing "r.jpg" with "v.jpg"
-      var derived = medium.replace(/r\.(jpg|jpeg|png)$/i, "v.$1");
-      return derived;
+      return medium.bare.replace(/r\.(jpg|jpeg|png)$/i, "v.$1");
     }
 
     // 3. Fall back to first real image
-    return real[0];
+    return real[0].url;
   }
 
   function pickRandom(arr) {
@@ -138,9 +143,10 @@
 
       // If the large "v.jpg" fails (404), fall back to medium "r.jpg"
       imgEl.onerror = function () {
-        var fallback = imageUrl.replace(/v\.(jpg|jpeg|png)$/i, "r.$1");
-        if (fallback !== imageUrl) {
-          imgEl.onerror = null; // prevent infinite loop
+        var bare = imageUrl.split("#")[0];
+        var fallback = bare.replace(/v\.(jpg|jpeg|png)$/i, "r.$1");
+        if (fallback !== bare) {
+          imgEl.onerror = null;
           imgEl.src = fallback;
         }
       };
