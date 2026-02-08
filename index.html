@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Random LOC Image</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>Library of Congress &mdash; Random Image</h1>
+    <button id="fetch-btn">Get Random Image</button>
+
+    <div id="loading" class="hidden">
+      <div class="spinner"></div>
+      <p>Searching the archives&hellip;</p>
+    </div>
+
+    <div id="error" class="hidden">
+      <p id="error-msg"></p>
+    </div>
+
+    <div id="result" class="hidden">
+      <div class="image-wrap">
+        <img id="image" alt="">
+      </div>
+      <div class="info">
+        <h2 id="title"></h2>
+        <dl>
+          <dt>Creator</dt>
+          <dd id="creator"></dd>
+          <dt>Date</dt>
+          <dd id="date"></dd>
+          <dt>Medium</dt>
+          <dd id="medium"></dd>
+          <dt>Subjects</dt>
+          <dd id="subjects"></dd>
+        </dl>
+        <a id="loc-link" href="#" target="_blank" rel="noopener">View on Library of Congress</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
