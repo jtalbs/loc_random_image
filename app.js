@@ -39,26 +39,38 @@
   }
 
   /**
-   * Pick the best image URL from the image_url array.
-   * The array typically contains:
-   *   [0] = 150px thumbnail
-   *   [1] = medium "r.jpg" or "t.gif"
-   *   [2] = larger version or verso
-   * We prefer the first URL ending in "r.jpg" (recto/medium),
-   * falling back to the thumbnail.
+   * Pick the best (largest) image URL from the image_url array.
+   * Per the LOC /pictures/ API docs, the size suffixes are:
+   *   t.gif  = small thumbnail
+   *   r.jpg  = medium
+   *   v.jpg  = large
+   *   u.tif  = full resolution (too heavy for web display)
+   *
+   * The /photos/ API returns these in the image_url array.
+   * We prefer "v.jpg" (large), then "r.jpg" (medium), then
+   * derive "v.jpg" from "r.jpg" if only medium is available.
    */
   function getBestImageUrl(imageUrls) {
     if (!imageUrls || imageUrls.length === 0) return null;
 
-    // Prefer the medium-res recto image
-    const recto = imageUrls.find(function (u) { return /r\.(jpg|jpeg|png|gif)$/i.test(u); });
-    if (recto) return recto;
+    // Filter to only tile.loc.gov URLs (skip placeholders)
+    var real = imageUrls.filter(function (u) { return u.includes("tile.loc.gov"); });
+    if (real.length === 0) return null;
 
-    // Fall back to thumbnail if it's on tile.loc.gov (real image, not placeholder)
-    const thumb = imageUrls[0];
-    if (thumb && thumb.includes("tile.loc.gov")) return thumb;
+    // 1. Prefer the large "v.jpg" version
+    var large = real.find(function (u) { return /v\.(jpg|jpeg|png)$/i.test(u); });
+    if (large) return large;
 
-    return null;
+    // 2. Try medium "r.jpg"
+    var medium = real.find(function (u) { return /r\.(jpg|jpeg|png)$/i.test(u); });
+    if (medium) {
+      // Derive large from medium: replace trailing "r.jpg" with "v.jpg"
+      var derived = medium.replace(/r\.(jpg|jpeg|png)$/i, "v.$1");
+      return derived;
+    }
+
+    // 3. Fall back to first real image
+    return real[0];
   }
 
   function pickRandom(arr) {
@@ -124,6 +136,14 @@
       var item = ref.item;
       var imageUrl = ref.imageUrl;
 
+      // If the large "v.jpg" fails (404), fall back to medium "r.jpg"
+      imgEl.onerror = function () {
+        var fallback = imageUrl.replace(/v\.(jpg|jpeg|png)$/i, "r.$1");
+        if (fallback !== imageUrl) {
+          imgEl.onerror = null; // prevent infinite loop
+          imgEl.src = fallback;
+        }
+      };
       imgEl.src = imageUrl;
       imgEl.alt = item.title || "Library of Congress image";
       titleEl.textContent = item.title || "Untitled";
